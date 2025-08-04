@@ -33,4 +33,16 @@ export const getTurns = (conversationId) =>
 export const createTurn = (conversationId, data) => 
   api.post(`/conversations/${conversationId}/turns`, data);
 
+// Model Configurations (Personas)
+export const getModelConfigs = (activeOnly = false, provider = null) => {
+  let params = {};
+  if (activeOnly) params.active_only = true;
+  if (provider) params.provider = provider;
+  return api.get('/model-configs', { params });
+};
+export const getModelConfig = (id) => api.get(`/model-configs/${id}`);
+export const createModelConfig = (data) => api.post('/model-configs', data);
+export const updateModelConfig = (id, data) => api.put(`/model-configs/${id}`, data);
+export const deleteModelConfig = (id) => api.delete(`/model-configs/${id}`);
+
 export default api;

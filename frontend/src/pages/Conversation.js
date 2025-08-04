@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import axios from 'axios';
+import { getTurns, createTurn, getModelConfigs } from '../services/api';
 
 function Conversation() {
   const { conversationId } = useParams();
@@ -11,11 +11,15 @@ function Conversation() {
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [query, setQuery] = useState('');
+  const [personas, setPersonas] = useState([]);
+  const [selectedPersonaId, setSelectedPersonaId] = useState('');
+  const [loadingPersonas, setLoadingPersonas] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     fetchConversation();
     fetchTurns();
+    fetchPersonas();
   }, [conversationId]);
 
   const fetchConversation = async () => {
@@ -31,7 +35,7 @@ function Conversation() {
   const fetchTurns = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/conversations/${conversationId}/turns`);
+      const response = await getTurns(conversationId);
       setTurns(response.data);
       setError(null);
     } catch (err) {
@@ -39,6 +43,23 @@ function Conversation() {
       console.error('Error fetching turns:', err);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const fetchPersonas = async () => {
+    try {
+      setLoadingPersonas(true);
+      const response = await getModelConfigs(true); // Get only active personas
+      setPersonas(response.data);
+      
+      // Set default selected persona if available
+      if (response.data.length > 0) {
+        setSelectedPersonaId(response.data[0].id);
+      }
+    } catch (err) {
+      console.error('Error fetching personas:', err);
+    } finally {
+      setLoadingPersonas(false);
     }
   };
 
@@ -76,8 +97,9 @@ function Conversation() {
   const handleGenerateTurn = async () => {
     try {
       setGenerating(true);
-      await axios.post(`${process.env.REACT_APP_API_URL}/conversations/${conversationId}/turns`, {
-        query: query
+      await createTurn(conversationId, {
+        query: query,
+        model_config_id: selectedPersonaId || undefined
       });
       setQuery('');
       await fetchTurns();
@@ -138,6 +160,23 @@ function Conversation() {
               onChange={(e) => setQuery(e.target.value)}
             ></textarea>
           </div>
+          
+          <div className="form-group">
+            <label>Select Persona:</label>
+            <select
+              value={selectedPersonaId}
+              onChange={(e) => setSelectedPersonaId(e.target.value)}
+              disabled={loadingPersonas}
+            >
+              {personas.length === 0 && <option value="">No personas available</option>}
+              {personas.map(persona => (
+                <option key={persona.id} value={persona.id}>
+                  {persona.persona_name} ({persona.provider}/{persona.model_id})
+                </option>
+              ))}
+            </select>
+            {loadingPersonas && <span className="loading-text">Loading personas...</span>}
+          </div>
           <button
             className="btn"
             onClick={handleStartConversation}
@@ -153,6 +192,11 @@ function Conversation() {
               <div key={turn.id} className="turn">
                 <div className="turn-header">
                   <span>Turn {turn.turn_number}</span>
+                  <span>
+                    {turn.model_config_id ? 
+                      personas.find(p => p.id === turn.model_config_id)?.persona_name || turn.model_name : 
+                      turn.model_name}
+                  </span>
                   <span>{new Date(turn.created_at).toLocaleString()}</span>
                 </div>
                 <div className="turn-content">
@@ -163,6 +207,22 @@ function Conversation() {
           </div>
 
           <div className="card">
+            <div className="form-group">
+              <label>Select Persona:</label>
+              <select
+                value={selectedPersonaId}
+                onChange={(e) => setSelectedPersonaId(e.target.value)}
+                disabled={loadingPersonas || generating}
+              >
+                {personas.length === 0 && <option value="">No personas available</option>}
+                {personas.map(persona => (
+                  <option key={persona.id} value={persona.id}>
+                    {persona.persona_name} ({persona.provider}/{persona.model_id})
+                  </option>
+                ))}
+              </select>
+              {loadingPersonas && <span className="loading-text">Loading personas...</span>}
+            </div>
             <button
               className="btn"
               onClick={handleContinueConversation}
