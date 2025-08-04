@@ -1,13 +1,18 @@
 # Roundtable
 
-Roundtable is a multi-agent discourse system where a single model (OpenAI GPT) has a conversation with itself about uploaded text documents. The system provides a simple web interface for uploading documents, starting conversations, and viewing the dialogue.
+Roundtable is a multi-agent discourse system where multiple AI models with different personas have conversations about uploaded text documents, focusing on productive disagreement. The system provides a web interface for uploading documents, starting conversations, and viewing the dialogue between different AI agents.
 
 ## Features
 
 - Upload text documents to a conversation
 - Automatic sentence-level chunking with sequence numbers
 - Vector embeddings for semantic search using pgvector
-- Turn-based conversation system where the model responds to its own previous responses
+- Multi-agent architecture with support for multiple AI providers (OpenAI, Anthropic, DeepSeek)
+- Persona-specific prompting system for perspective diversity
+- Model rotation logic to maximize disagreement
+- Multi-query RAG for improved document retrieval
+- Conflict/disagreement scoring to measure semantic divergence
+- Dual-track conversations with both private thoughts and public responses
 - Simple web interface to manage conversations and view dialogues
 
 ## Tech Stack
@@ -53,7 +58,10 @@ roundtable/
 
 2. Set up environment variables:
    ```
-   export OPENAI_API_KEY=your_openai_api_key  # Optional but recommended
+   # API keys for different providers (use the ones you need)
+   export OPENAI_API_KEY=your_openai_api_key
+   export ANTHROPIC_API_KEY=your_anthropic_api_key
+   export DEEPSEEK_API_KEY=your_deepseek_api_key
    ```
 
 ### Running the Application
@@ -105,9 +113,17 @@ roundtable/
 
 ### Turns
 
-- `POST /api/conversations/{conversation_id}/turns`: Create a new turn
+- `POST /api/conversations/{conversation_id}/turns`: Create a new turn (with optional model_config_id)
 - `GET /api/conversations/{conversation_id}/turns`: List all turns in a conversation
 - `GET /api/turns/{turn_id}`: Get a specific turn
+
+### Model Configurations
+
+- `POST /api/model-configs`: Create a new model configuration
+- `GET /api/model-configs`: List all model configurations (with optional filtering)
+- `GET /api/model-configs/{model_config_id}`: Get a specific model configuration
+- `PUT /api/model-configs/{model_config_id}`: Update a model configuration
+- `DELETE /api/model-configs/{model_config_id}`: Delete a model configuration
 
 ## Development
 

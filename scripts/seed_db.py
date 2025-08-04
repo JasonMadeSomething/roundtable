@@ -6,17 +6,71 @@ This script populates the database with sample data for development purposes.
 
 import os
 import sys
-from datetime import datetime
 import asyncio
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy.orm import Session
-from app.db import engine, SessionLocal
-from app.models import Base, Conversation, Document, Chunk, Turn
+from app.db import SessionLocal
+from app.models import Conversation, Document, Chunk, Turn, ModelConfig
 from app.services.document_processor import generate_embedding
 
+
+# Sample model configurations
+SAMPLE_MODEL_CONFIGS = [
+    {
+        "name": "Critical Analyst",
+        "provider": "openai",
+        "model_id": "gpt-4",
+        "persona_name": "Critical Analyst",
+        "persona_description": "A rigorous, skeptical thinker who questions assumptions and demands evidence",
+        "persona_instructions": "Approach all claims with skepticism. Ask for evidence and challenge assumptions. Focus on logical inconsistencies and methodological flaws. Play devil's advocate.",
+        "temperature": 0.7,
+        "max_tokens": 500,
+        "top_p": 1.0,
+        "provider_parameters": '{"presence_penalty": 0.0, "frequency_penalty": 0.0}',
+        "is_active": True
+    },
+    {
+        "name": "Creative Synthesizer",
+        "provider": "openai",
+        "model_id": "gpt-4",
+        "persona_name": "Creative Synthesizer",
+        "persona_description": "An innovative thinker who connects disparate ideas and generates novel perspectives",
+        "persona_instructions": "Look for unexpected connections between concepts. Generate novel hypotheses and perspectives. Think outside conventional frameworks. Propose creative solutions and analogies.",
+        "temperature": 0.9,
+        "max_tokens": 500,
+        "top_p": 1.0,
+        "provider_parameters": '{"presence_penalty": 0.2, "frequency_penalty": 0.3}',
+        "is_active": True
+    },
+    {
+        "name": "Empirical Scientist",
+        "provider": "anthropic",
+        "model_id": "claude-3-opus",
+        "persona_name": "Empirical Scientist",
+        "persona_description": "A data-driven researcher who prioritizes empirical evidence and methodological rigor",
+        "persona_instructions": "Focus on empirical evidence and data. Evaluate the quality of research methods and statistical analyses. Distinguish between correlation and causation. Emphasize reproducibility and falsifiability.",
+        "temperature": 0.5,
+        "max_tokens": 500,
+        "top_p": 0.95,
+        "provider_parameters": '{"top_k": 40}',
+        "is_active": True
+    },
+    {
+        "name": "Philosophical Theorist",
+        "provider": "deepseek",
+        "model_id": "deepseek-chat",
+        "persona_name": "Philosophical Theorist",
+        "persona_description": "A conceptual thinker who explores fundamental questions and theoretical frameworks",
+        "persona_instructions": "Examine fundamental assumptions and conceptual frameworks. Consider ethical implications and philosophical perspectives. Explore thought experiments and counterfactuals. Question the meaning of key terms and concepts.",
+        "temperature": 0.8,
+        "max_tokens": 500,
+        "top_p": 1.0,
+        "provider_parameters": '{"presence_penalty": 0.1}',
+        "is_active": True
+    }
+]
 
 # Sample data
 SAMPLE_CONVERSATIONS = [
@@ -84,6 +138,13 @@ async def seed_database():
     try:
         print("Seeding database with sample data...")
         
+        # Add model configurations
+        for config_data in SAMPLE_MODEL_CONFIGS:
+            model_config = ModelConfig(**config_data)
+            db.add(model_config)
+        db.commit()
+        print(f"Added {len(SAMPLE_MODEL_CONFIGS)} sample model configurations")
+        
         # Add conversations
         for conv_data in SAMPLE_CONVERSATIONS:
             conversation = Conversation(**conv_data)
@@ -120,6 +181,11 @@ async def seed_database():
         
         # Add turns
         for turn_data in SAMPLE_TURNS:
+            # For sample turns, assign a random model config
+            model_config = db.query(ModelConfig).first()  # Just use the first one for simplicity
+            if model_config:
+                turn_data["model_config_id"] = model_config.id
+            
             turn = Turn(**turn_data)
             db.add(turn)
         db.commit()

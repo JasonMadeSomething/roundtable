@@ -1,9 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 # Import API routers
-from app.api import conversations, documents, turns
+from app.api import conversations, documents, turns, model_configs
 
 # Create FastAPI app
 app = FastAPI(
@@ -25,6 +24,7 @@ app.add_middleware(
 app.include_router(conversations.router, prefix="/api", tags=["conversations"])
 app.include_router(documents.router, prefix="/api", tags=["documents"])
 app.include_router(turns.router, prefix="/api", tags=["turns"])
+app.include_router(model_configs.router, prefix="/api", tags=["model_configs"])
 
 # Mount static files for frontend
 # app.mount("/", StaticFiles(directory="frontend/build", html=True), name="frontend")

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db import get_db
-from app.models import Turn, Conversation
+from app.models import Turn, Conversation, ModelConfig
 from app.services.agent_service import generate_turn_response
 from pydantic import BaseModel
 from datetime import datetime
@@ -13,6 +13,7 @@ router = APIRouter()
 
 class TurnCreate(BaseModel):
     query: Optional[str] = None  # Optional query for the first turn
+    model_config_id: Optional[int] = None  # Optional model config ID to use
 
 
 class TurnResponse(BaseModel):
@@ -20,7 +21,9 @@ class TurnResponse(BaseModel):
     conversation_id: int
     turn_number: int
     model_name: str
+    model_config_id: Optional[int] = None
     response: str
+    private_thoughts: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -44,20 +47,31 @@ async def create_turn(
     turn_number = 1 if last_turn is None else last_turn.turn_number + 1
     
     # Generate response based on previous turns and relevant document chunks
-    model_name = "gpt-4"  # Default model
-    response = await generate_turn_response(
+    response, private_thoughts = await generate_turn_response(
         conversation_id=conversation_id,
         turn_number=turn_number,
         query=turn_data.query if turn_number == 1 else None,
-        db=db
+        db=db,
+        model_config_id=turn_data.model_config_id
     )
+    
+    # Get model config information
+    model_config = None
+    model_name = "gpt-4"  # Default model name for backward compatibility
+    
+    if turn_data.model_config_id:
+        model_config = db.query(ModelConfig).filter(ModelConfig.id == turn_data.model_config_id).first()
+        if model_config:
+            model_name = f"{model_config.provider}/{model_config.model_id}"
     
     # Create turn
     turn = Turn(
         conversation_id=conversation_id,
         turn_number=turn_number,
         model_name=model_name,
-        response=response
+        model_config_id=turn_data.model_config_id,
+        response=response,
+        private_thoughts=private_thoughts
     )
     db.add(turn)
     db.commit()
