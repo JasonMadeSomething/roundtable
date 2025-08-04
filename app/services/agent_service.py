@@ -85,19 +85,24 @@ async def multi_query_retrieval(base_query: str, conversation_id: int, db: Sessi
     return all_chunks
 
 async def retrieve_relevant_chunks(query: str, conversation_id: int, db: Session, limit: int = MAX_CHUNKS):
-    """Retrieve chunks relevant to the query"""
-    # TEMPORARY WORKAROUND: Skip vector similarity search due to pgvector compatibility issue
-    # Instead, just return a limited number of chunks from the conversation
-    
+    """Retrieve chunks relevant to the query using vector similarity search"""
     # Get document IDs for this conversation
     document_ids = [doc_id for doc_id, in db.query(Document.id).filter(Document.conversation_id == conversation_id).all()]
     
     if not document_ids:
         return []
     
-    # Just return a limited number of chunks without vector similarity
-    # This is a temporary workaround until we fix the pgvector integration
-    chunks = db.query(Chunk).filter(Chunk.document_id.in_(document_ids)).limit(limit).all()
+    # Generate embedding for the query
+    query_embedding = await generate_embedding(query)
+    
+    # Use pgvector's cosine similarity operator (<#>) to find relevant chunks
+    # Lower score means higher similarity with cosine distance
+    chunks = db.query(Chunk).filter(
+        Chunk.document_id.in_(document_ids),
+        Chunk.embedding.is_not(None)  # Ensure embedding exists
+    ).order_by(
+        Chunk.embedding.cosine_distance(query_embedding)
+    ).limit(limit).all()
     
     return chunks
 
