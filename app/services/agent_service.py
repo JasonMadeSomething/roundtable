@@ -1,12 +1,13 @@
 import openai
-from sqlalchemy.orm import Session
-import numpy as np
 import os
 import random
 import json
-from typing import List
+import numpy as np
+from sqlalchemy.orm import Session
+from typing import List, Optional
 
-from app.models import Turn, Chunk, Document, Conversation, ModelConfig
+from app.models import Conversation, Document, Chunk, Turn, ModelConfig, PersonaOrder, PersonaVote
+from app.services.embedding_service import generate_embedding
 
 # API keys and configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -33,25 +34,8 @@ MIN_DISAGREEMENT_SCORE = 0.3  # Minimum disagreement score to consider models in
 MAX_AGREEMENT_SCORE = 0.8    # Maximum agreement score to consider models in agreement
 
 
-async def generate_embedding(text: str) -> list:
-    """Generate embedding for text using OpenAI API"""
-    if not OPENAI_API_KEY:
-        # For development without API key, generate random embeddings
-        return list(np.random.uniform(-1, 1, EMBEDDING_DIMENSION))
-    
-    # Set OpenAI API key
-    openai.api_key = OPENAI_API_KEY
-    
-    # Generate embedding
-    response = await openai.Embedding.acreate(
-        input=text,
-        model=EMBEDDING_MODEL
-    )
-    
-    # Extract embedding
-    embedding = response["data"][0]["embedding"]
-    
-    return embedding
+# This function is imported from embedding_service.py
+# Keeping reference to avoid import errors
 
 
 async def multi_query_retrieval(base_query: str, conversation_id: int, db: Session, limit: int = MAX_CHUNKS) -> List[Chunk]:
@@ -123,39 +107,124 @@ def calculate_disagreement_score(response1: str, response2: str) -> float:
     """
     # For now, we'll use a simple heuristic based on cosine similarity of embeddings
     # In a real implementation, you would use a more sophisticated approach
-    # such as using a model to evaluate disagreement or analyzing semantic content
-    
-    # Convert responses to embeddings
-    embedding1 = np.array(generate_embedding_sync(response1))
-    embedding2 = np.array(generate_embedding_sync(response2))
-    
-    # Calculate cosine similarity
-    similarity = cosine_similarity(embedding1, embedding2)
-    
-    # Convert similarity to disagreement score (1 - similarity)
-    disagreement = 1.0 - similarity
-    
-    return disagreement
+    try:
+        embedding1 = generate_embedding_sync(response1)
+        embedding2 = generate_embedding_sync(response2)
+        similarity = cosine_similarity(embedding1, embedding2)
+        # Convert similarity to a disagreement score (0-1 range)
+        # Higher score means more disagreement
+        return 1.0 - similarity
+    except Exception as e:
+        print(f"Error calculating disagreement score: {e}")
+        return 0.5  # Default to moderate disagreement on error
 
-def generate_embedding_sync(text: str) -> list:
-    """Synchronous version of generate_embedding for internal use"""
-    if not OPENAI_API_KEY:
-        # For development without API key, generate random embeddings
-        return list(np.random.uniform(-1, 1, EMBEDDING_DIMENSION))
+
+def generate_embedding_sync(text: str) -> List[float]:
+    """Generate embedding synchronously for a text string"""
+    import openai
+    import os
     
-    # Set OpenAI API key
-    openai.api_key = OPENAI_API_KEY
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY environment variable not set")
     
-    # Generate embedding
+    openai.api_key = api_key
+    
     response = openai.Embedding.create(
         input=text,
-        model=EMBEDDING_MODEL
+        model="text-embedding-ada-002"
     )
     
-    # Extract embedding
-    embedding = response["data"][0]["embedding"]
+    return response["data"][0]["embedding"]
+
+
+def get_next_persona_by_order(conversation_id: int, current_turn_id: int, db: Session) -> Optional[int]:
+    """Determine the next persona based on the configured order"""
     
-    return embedding
+    # Get the current turn
+    current_turn = db.query(Turn).filter(Turn.id == current_turn_id).first()
+    if not current_turn:
+        return None
+    
+    # Get the current persona's position in the order
+    current_persona_id = current_turn.model_config_id
+    current_order = db.query(PersonaOrder).filter(
+        PersonaOrder.conversation_id == conversation_id,
+        PersonaOrder.model_config_id == current_persona_id
+    ).first()
+    
+    if not current_order:
+        # If current persona is not in the order, use the first persona in the order
+        next_order = db.query(PersonaOrder).filter(
+            PersonaOrder.conversation_id == conversation_id
+        ).order_by(PersonaOrder.order_position).first()
+    else:
+        # Find the next persona in the order
+        next_position = (current_order.order_position + 1)
+        next_order = db.query(PersonaOrder).filter(
+            PersonaOrder.conversation_id == conversation_id,
+            PersonaOrder.order_position == next_position
+        ).first()
+        
+        # If we've reached the end of the order, loop back to the beginning
+        if not next_order:
+            next_order = db.query(PersonaOrder).filter(
+                PersonaOrder.conversation_id == conversation_id
+            ).order_by(PersonaOrder.order_position).first()
+    
+    if next_order:
+        return next_order.model_config_id
+    
+    return None
+
+
+def get_next_persona_by_voting(conversation_id: int, current_turn_id: int, db: Session) -> Optional[int]:
+    """Determine the next persona based on votes"""
+    import sqlalchemy as sa
+    
+    # Count votes for each persona
+    votes = db.query(
+        PersonaVote.voted_for_model_config_id,
+        sa.func.count(PersonaVote.id).label("vote_count")
+    ).filter(
+        PersonaVote.conversation_id == conversation_id,
+        PersonaVote.turn_id == current_turn_id
+    ).group_by(PersonaVote.voted_for_model_config_id).order_by(
+        sa.desc("vote_count")
+    ).first()
+    
+    if votes:
+        return votes.voted_for_model_config_id
+    
+    return None
+
+
+def determine_next_persona(conversation_id: int, current_turn_id: int, db: Session) -> Optional[int]:
+    """Determine the next persona based on conversation settings"""
+    from app.models import Conversation, Turn
+    
+    # Get the conversation and current turn
+    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    current_turn = db.query(Turn).filter(Turn.id == current_turn_id).first()
+    
+    if not conversation or not current_turn:
+        return None
+    
+    # Check if there's an override for the next turn
+    if current_turn.next_turn_override_id:
+        return current_turn.next_turn_override_id
+    
+    # If voting is enabled, check for votes
+    if conversation.enable_voting:
+        next_persona_id = get_next_persona_by_voting(conversation_id, current_turn_id, db)
+        if next_persona_id:
+            return next_persona_id
+    
+    # Fall back to persona order
+    return get_next_persona_by_order(conversation_id, current_turn_id, db)
+
+
+# Moved to the top of the file
 
 async def select_model_for_turn(conversation_id: int, turn_number: int, db: Session) -> ModelConfig:
     """Select a model for the current turn using rotation and disagreement maximization"""

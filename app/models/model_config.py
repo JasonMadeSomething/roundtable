@@ -30,7 +30,8 @@ class ModelConfig(Base, TimestampMixin):
     is_active = Column(Boolean, nullable=False, default=True)
     
     # Relationships
-    turns = relationship("Turn", back_populates="model_config")
+    turns = relationship("Turn", foreign_keys="Turn.model_config_id", back_populates="model_config")
+    persona_orders = relationship("PersonaOrder", back_populates="model_config")
     
     def __repr__(self):
         return f"<ModelConfig(id={self.id}, name={self.name}, provider={self.provider}, model_id={self.model_id})>"
