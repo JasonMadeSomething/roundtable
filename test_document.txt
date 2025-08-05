@@ -1,0 +1,46 @@
+# Introduction to Semantic Chunking
+
+This document serves as a test for our new spaCy-based semantic chunking system. The system should be able to identify sections, paragraphs, and semantic groups within this document.
+
+## Background
+
+Natural language processing has evolved significantly in recent years. Large language models like GPT-4 and Claude have demonstrated impressive capabilities in understanding and generating human language. However, these models often struggle with long documents due to context window limitations.
+
+Semantic chunking addresses this limitation by breaking down documents into meaningful segments that preserve context and coherence. Unlike naive sentence-based chunking, semantic chunking considers document structure, topic shifts, and entity relationships.
+
+## Methodology
+
+Our approach uses spaCy to analyze document structure at multiple levels:
+
+1. Section Detection: We identify section headers and their corresponding content
+2. Paragraph Extraction: We group sentences into coherent paragraphs
+3. Semantic Grouping: We cluster content based on shared entities and topics
+
+This multi-level analysis allows us to create chunks that maintain semantic coherence while respecting document structure.
+
+## Implementation Details
+
+The implementation consists of several key components:
+
+- Document parsing with spaCy
+- Section and header detection using regex patterns
+- Paragraph boundary identification
+- Entity and topic extraction for semantic grouping
+- Importance scoring based on entity density
+
+Each chunk is assigned metadata including section title, paragraph ID, semantic group, and importance score. This metadata enables context-aware retrieval during the RAG process.
+
+## Expected Results
+
+When processing this document, we expect to see:
+
+1. Proper identification of section headers
+2. Coherent paragraph grouping
+3. Meaningful semantic clusters
+4. Appropriate importance scores for different chunks
+
+The context-aware retrieval system should be able to fetch not just the most semantically similar chunks but also their surrounding context to provide a more complete picture to the AI model.
+
+## Conclusion
+
+Semantic chunking represents a significant improvement over naive sentence-based approaches. By preserving document structure and semantic relationships, we can provide richer context to AI models, resulting in more accurate and contextually appropriate responses.

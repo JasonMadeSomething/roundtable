@@ -69,7 +69,7 @@ async def multi_query_retrieval(base_query: str, conversation_id: int, db: Sessi
     return all_chunks
 
 async def retrieve_relevant_chunks(query: str, conversation_id: int, db: Session, limit: int = MAX_CHUNKS):
-    """Retrieve chunks relevant to the query using vector similarity search"""
+    """Retrieve chunks relevant to the query using vector similarity search with context awareness"""
     # Get document IDs for this conversation
     document_ids = [doc_id for doc_id, in db.query(Document.id).filter(Document.conversation_id == conversation_id).all()]
     
@@ -79,16 +79,83 @@ async def retrieve_relevant_chunks(query: str, conversation_id: int, db: Session
     # Generate embedding for the query
     query_embedding = await generate_embedding(query)
     
-    # Use pgvector's cosine similarity operator (<#>) to find relevant chunks
-    # Lower score means higher similarity with cosine distance
-    chunks = db.query(Chunk).filter(
+    # First, find the most relevant chunks based on vector similarity
+    base_chunks = db.query(Chunk).filter(
         Chunk.document_id.in_(document_ids),
         Chunk.embedding.is_not(None)  # Ensure embedding exists
     ).order_by(
         Chunk.embedding.cosine_distance(query_embedding)
-    ).limit(limit).all()
+    ).limit(limit // 2).all()  # Use half the limit for initial retrieval
     
-    return chunks
+    # Track chunks we've already included
+    included_chunk_ids = {chunk.id for chunk in base_chunks}
+    result_chunks = list(base_chunks)
+    
+    # For each retrieved chunk, add context from surrounding chunks
+    for chunk in base_chunks:
+        # Get document and sequence info
+        doc_id = chunk.document_id
+        seq_num = chunk.sequence_number
+        
+        # Add context from the same semantic group
+        if chunk.semantic_group:
+            semantic_context = db.query(Chunk).filter(
+                Chunk.document_id == doc_id,
+                Chunk.id.notin_(included_chunk_ids),
+                Chunk.semantic_group == chunk.semantic_group
+            ).order_by(
+                Chunk.importance_score.desc()
+            ).limit(2).all()
+            
+            for context_chunk in semantic_context:
+                if context_chunk.id not in included_chunk_ids and len(result_chunks) < limit:
+                    result_chunks.append(context_chunk)
+                    included_chunk_ids.add(context_chunk.id)
+        
+        # Add context from the same paragraph
+        if chunk.paragraph_id:
+            paragraph_context = db.query(Chunk).filter(
+                Chunk.document_id == doc_id,
+                Chunk.id.notin_(included_chunk_ids),
+                Chunk.paragraph_id == chunk.paragraph_id
+            ).order_by(
+                Chunk.sequence_number
+            ).limit(2).all()
+            
+            for context_chunk in paragraph_context:
+                if context_chunk.id not in included_chunk_ids and len(result_chunks) < limit:
+                    result_chunks.append(context_chunk)
+                    included_chunk_ids.add(context_chunk.id)
+        
+        # Add adjacent chunks (N-1, N+1)
+        adjacent_chunks = db.query(Chunk).filter(
+            Chunk.document_id == doc_id,
+            Chunk.id.notin_(included_chunk_ids),
+            ((Chunk.sequence_number == seq_num - 1) | (Chunk.sequence_number == seq_num + 1))
+        ).all()
+        
+        for adj_chunk in adjacent_chunks:
+            if adj_chunk.id not in included_chunk_ids and len(result_chunks) < limit:
+                result_chunks.append(adj_chunk)
+                included_chunk_ids.add(adj_chunk.id)
+        
+        # Add section header if this chunk is not a header itself
+        if not chunk.is_section_header and chunk.section_title:
+            section_header = db.query(Chunk).filter(
+                Chunk.document_id == doc_id,
+                Chunk.id.notin_(included_chunk_ids),
+                Chunk.is_section_header.is_(True),
+                Chunk.section_title == chunk.section_title
+            ).first()
+            
+            if section_header and section_header.id not in included_chunk_ids and len(result_chunks) < limit:
+                result_chunks.append(section_header)
+                included_chunk_ids.add(section_header.id)
+    
+    # Sort chunks by sequence number to maintain document flow
+    result_chunks.sort(key=lambda x: (x.document_id, x.sequence_number))
+    
+    return result_chunks
 
 
 def cosine_similarity(vec1, vec2):
