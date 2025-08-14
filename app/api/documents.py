@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 from typing import List
 import os
+import io
+
+from PyPDF2 import PdfReader
 
 from app.db import get_db
 from app.models import Document, Conversation
@@ -22,6 +25,10 @@ class DocumentResponse(BaseModel):
         orm_mode = True
 
 
+ALLOWED_EXTENSIONS = {".txt", ".md", ".pdf"}
+MAX_FILE_SIZE = 1 * 1024 * 1024  # 1 MB
+
+
 @router.post("/conversations/{conversation_id}/documents", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     conversation_id: int,
@@ -33,11 +40,40 @@ async def upload_document(
     conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    
+
+    # Validate file extension
+    _, ext = os.path.splitext(file.filename or "")
+    if ext.lower() not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    # Validate file size without reading content
+    file.file.seek(0, os.SEEK_END)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large")
+
     # Read file content
     content = await file.read()
-    content_str = content.decode("utf-8")
-    
+
+    if ext.lower() == ".pdf":
+        try:
+            reader = PdfReader(io.BytesIO(content))
+            extracted_text = []
+            for page in reader.pages:
+                page_text = page.extract_text() or ""
+                extracted_text.append(page_text)
+            content_str = "\n".join(extracted_text).strip()
+            if not content_str:
+                raise HTTPException(status_code=400, detail="PDF contains no extractable text")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Unable to process PDF file")
+    else:
+        try:
+            content_str = content.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="Unable to decode file as UTF-8")
+
     # Create document
     document = Document(
         conversation_id=conversation_id,
@@ -47,10 +83,10 @@ async def upload_document(
     db.add(document)
     db.commit()
     db.refresh(document)
-    
+
     # Process document (chunk and embed)
     await process_document(document.id, db)
-    
+
     return document
 
 
