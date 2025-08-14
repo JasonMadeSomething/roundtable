@@ -207,42 +207,21 @@ def generate_embedding_sync(text: str) -> List[float]:
 
 def get_next_persona_by_order(conversation_id: int, current_turn_id: int, db: Session) -> Optional[int]:
     """Determine the next persona based on the configured order"""
-    
-    # Get the current turn
+    # Retrieve full persona order list
+    persona_orders = db.query(PersonaOrder).filter(
+        PersonaOrder.conversation_id == conversation_id
+    ).order_by(PersonaOrder.order_position).all()
+
+    if not persona_orders:
+        return None
+
+    # If no current turn, start with first persona in order
     current_turn = db.query(Turn).filter(Turn.id == current_turn_id).first()
     if not current_turn:
-        return None
-    
-    # Get the current persona's position in the order
-    current_persona_id = current_turn.model_config_id
-    current_order = db.query(PersonaOrder).filter(
-        PersonaOrder.conversation_id == conversation_id,
-        PersonaOrder.model_config_id == current_persona_id
-    ).first()
-    
-    if not current_order:
-        # If current persona is not in the order, use the first persona in the order
-        next_order = db.query(PersonaOrder).filter(
-            PersonaOrder.conversation_id == conversation_id
-        ).order_by(PersonaOrder.order_position).first()
-    else:
-        # Find the next persona in the order
-        next_position = (current_order.order_position + 1)
-        next_order = db.query(PersonaOrder).filter(
-            PersonaOrder.conversation_id == conversation_id,
-            PersonaOrder.order_position == next_position
-        ).first()
-        
-        # If we've reached the end of the order, loop back to the beginning
-        if not next_order:
-            next_order = db.query(PersonaOrder).filter(
-                PersonaOrder.conversation_id == conversation_id
-            ).order_by(PersonaOrder.order_position).first()
-    
-    if next_order:
-        return next_order.model_config_id
-    
-    return None
+        return persona_orders[0].model_config_id
+
+    next_index = current_turn.turn_number % len(persona_orders)
+    return persona_orders[next_index].model_config_id
 
 
 def get_next_persona_by_voting(conversation_id: int, current_turn_id: int, db: Session) -> Optional[int]:

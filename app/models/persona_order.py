@@ -17,10 +17,12 @@ class PersonaOrder(Base, TimestampMixin):
     conversation = relationship("Conversation", back_populates="persona_orders")
     model_config = relationship("ModelConfig", back_populates="persona_orders")
     
-    # Ensure each persona appears only once in the order for a conversation
+    # Only enforce unique positions within a conversation so the same persona
+    # can appear multiple times in the order (allowing an agent to "talk to
+    # itself" or be configured in multiple slots).
     __table_args__ = (
-        UniqueConstraint('conversation_id', 'model_config_id', name='uix_persona_order_conversation_model'),
-        UniqueConstraint('conversation_id', 'order_position', name='uix_persona_order_conversation_position'),
+        UniqueConstraint('conversation_id', 'order_position',
+                         name='uix_persona_order_conversation_position'),
     )
     
     def __repr__(self):

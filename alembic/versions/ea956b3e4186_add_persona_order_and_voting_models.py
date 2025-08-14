@@ -27,7 +27,6 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['conversation_id'], ['conversations.id'], ),
     sa.ForeignKeyConstraint(['model_config_id'], ['model_configs.id'], ),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('conversation_id', 'model_config_id', name='uix_persona_order_conversation_model'),
     sa.UniqueConstraint('conversation_id', 'order_position', name='uix_persona_order_conversation_position')
     )
     op.create_index(op.f('ix_persona_orders_id'), 'persona_orders', ['id'], unique=False)

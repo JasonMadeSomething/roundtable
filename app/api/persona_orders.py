@@ -50,18 +50,6 @@ def create_persona_order(
     if not model_config:
         raise HTTPException(status_code=404, detail="Model configuration not found")
     
-    # Check if this persona is already in the order
-    existing_order = db.query(PersonaOrder).filter(
-        PersonaOrder.conversation_id == conversation_id,
-        PersonaOrder.model_config_id == persona_order.model_config_id
-    ).first()
-    
-    if existing_order:
-        raise HTTPException(
-            status_code=400, 
-            detail="This persona is already in the conversation order"
-        )
-    
     # Check if the position is already taken
     position_taken = db.query(PersonaOrder).filter(
         PersonaOrder.conversation_id == conversation_id,
@@ -104,10 +92,10 @@ def list_persona_orders(conversation_id: int, db: Session = Depends(get_db)):
     return persona_orders
 
 
-@router.put("/conversations/{conversation_id}/persona-orders/{model_config_id}", response_model=PersonaOrderResponse)
+@router.put("/conversations/{conversation_id}/persona-orders/{order_id}", response_model=PersonaOrderResponse)
 def update_persona_order(
     conversation_id: int,
-    model_config_id: int,
+    order_id: int,
     persona_order: PersonaOrderUpdate,
     db: Session = Depends(get_db)
 ):
@@ -120,7 +108,7 @@ def update_persona_order(
     # Check if the persona order exists
     db_persona_order = db.query(PersonaOrder).filter(
         PersonaOrder.conversation_id == conversation_id,
-        PersonaOrder.model_config_id == model_config_id
+        PersonaOrder.id == order_id
     ).first()
     
     if not db_persona_order:
@@ -130,7 +118,7 @@ def update_persona_order(
     position_taken = db.query(PersonaOrder).filter(
         PersonaOrder.conversation_id == conversation_id,
         PersonaOrder.order_position == persona_order.order_position,
-        PersonaOrder.model_config_id != model_config_id
+        PersonaOrder.id != order_id
     ).first()
     
     if position_taken:
@@ -147,8 +135,8 @@ def update_persona_order(
     return db_persona_order
 
 
-@router.delete("/conversations/{conversation_id}/persona-orders/{model_config_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_persona_order(conversation_id: int, model_config_id: int, db: Session = Depends(get_db)):
+@router.delete("/conversations/{conversation_id}/persona-orders/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_persona_order(conversation_id: int, order_id: int, db: Session = Depends(get_db)):
     """Remove a persona from the conversation order"""
     # Check if conversation exists
     conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
@@ -158,7 +146,7 @@ def delete_persona_order(conversation_id: int, model_config_id: int, db: Session
     # Check if the persona order exists
     db_persona_order = db.query(PersonaOrder).filter(
         PersonaOrder.conversation_id == conversation_id,
-        PersonaOrder.model_config_id == model_config_id
+        PersonaOrder.id == order_id
     ).first()
     
     if not db_persona_order:
