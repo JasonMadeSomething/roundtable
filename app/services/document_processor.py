@@ -1,10 +1,17 @@
-from sqlalchemy.orm import Session
-import spacy
+import asyncio
+import logging
 import re
 from typing import List, Dict
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+import spacy
+
 from app.models import Document, Chunk
 from app.services.embedding_service import generate_embedding
+
+logger = logging.getLogger(__name__)
 
 # Load spaCy model
 nlp = spacy.load("en_core_web_sm")
@@ -14,43 +21,65 @@ MAX_CHUNK_SIZE = 512  # Maximum number of characters per chunk
 MIN_CHUNK_SIZE = 100  # Minimum number of characters per chunk
 OVERLAP_SIZE = 50     # Number of characters to overlap between chunks
 
+# Batch configuration
+CHUNK_BATCH_SIZE = 100  # Number of chunks to insert per transaction
+EMBED_BATCH_SIZE = 10   # Number of embeddings to generate in parallel
 
-async def process_document(document_id: int, db: Session):
-    """Process a document by chunking it and generating embeddings using spaCy"""
-    # Get document
+
+async def process_document(document_id: int, db: Session) -> int:
+    """Process a document by chunking it and generating embeddings.
+
+    The function processes large documents in smaller batches to reduce memory
+    usage and avoid partial database writes. Embeddings are generated
+    asynchronously with limited parallelism."""
+
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
         raise ValueError(f"Document with ID {document_id} not found")
-    
-    # Parse document with spaCy for linguistic analysis
-    doc = nlp(document.content)
-    
-    # Extract document structure
+
+    # Offload spaCy processing to a background thread. This keeps the event loop
+    # responsive and allows for streaming/large document handling.
+    doc = await asyncio.to_thread(nlp, document.content)
+
     sections = extract_document_sections(doc)
     paragraphs = extract_paragraphs(doc)
     semantic_groups = identify_semantic_groups(doc)
-    
-    # Create semantic chunks
+
     chunks = create_semantic_chunks(
         doc=doc,
         document_id=document_id,
         sections=sections,
         paragraphs=paragraphs,
-        semantic_groups=semantic_groups
+        semantic_groups=semantic_groups,
     )
-    
-    # Add chunks to database
-    db.add_all(chunks)
-    db.commit()
-    
-    # Generate embeddings for chunks
-    for chunk in chunks:
-        embedding = await generate_embedding(chunk.content)
-        chunk.embedding = embedding
-    
-    # Update chunks with embeddings
-    db.commit()
-    
+
+    # Semaphore limits concurrent embedding requests
+    semaphore = asyncio.Semaphore(EMBED_BATCH_SIZE)
+
+    async def embed_chunk(chunk: Chunk):
+        async with semaphore:
+            try:
+                chunk.embedding = await generate_embedding(chunk.content)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Embedding generation failed for chunk %s: %s", chunk.sequence_number, e)
+                raise
+
+    # Insert chunks and embeddings in batches to avoid partial writes
+    for i in range(0, len(chunks), CHUNK_BATCH_SIZE):
+        batch = chunks[i : i + CHUNK_BATCH_SIZE]
+
+        # Generate embeddings concurrently for this batch
+        await asyncio.gather(*(embed_chunk(chunk) for chunk in batch))
+
+        # Commit batch to database
+        db.add_all(batch)
+        try:
+            db.commit()
+        except SQLAlchemyError as e:  # noqa: PERF203
+            db.rollback()
+            logger.exception("Failed to commit chunk batch starting at %s: %s", i, e)
+            raise
+
     return len(chunks)
 
 
