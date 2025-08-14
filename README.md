@@ -63,6 +63,10 @@ roundtable/
    export ANTHROPIC_API_KEY=your_anthropic_api_key
    export DEEPSEEK_API_KEY=your_deepseek_api_key
    ```
+   If `OPENAI_API_KEY` is omitted, the backend uses a deterministic hash-based
+   embedding for development and testing. These vectors are reproducible but do
+   **not** capture semantic meaning, so a real API key is required for
+   production usage.
 
 ### Running the Application
 
