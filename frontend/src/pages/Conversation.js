@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { getTurns, createTurn, getModelConfigs } from '../services/api';
+import {
+  getConversation,
+  getTurns,
+  createTurn,
+  getModelConfigs,
+  uploadDocument,
+} from '../services/api';
 
 function Conversation() {
   const { conversationId } = useParams();
@@ -24,7 +30,7 @@ function Conversation() {
 
   const fetchConversation = async () => {
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/conversations/${conversationId}`);
+      const response = await getConversation(conversationId);
       setConversation(response.data);
     } catch (err) {
       setError('Failed to fetch conversation details.');
@@ -72,15 +78,7 @@ function Conversation() {
 
     try {
       setUploading(true);
-      await axios.post(
-        `${process.env.REACT_APP_API_URL}/conversations/${conversationId}/documents`,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
+      await uploadDocument(conversationId, formData);
       // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';

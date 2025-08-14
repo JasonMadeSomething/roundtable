@@ -10,6 +10,15 @@ const api = axios.create({
   },
 });
 
+// Global error handling for all requests
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('API error:', error);
+    return Promise.reject(error);
+  }
+);
+
 // Conversations
 export const getConversations = () => api.get('/conversations');
 export const getConversation = (id) => api.get(`/conversations/${id}`);
