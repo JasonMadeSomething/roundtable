@@ -202,45 +202,29 @@ def get_next_persona(conversation_id: int, turn_id: int, db: Session = Depends(g
                     "vote_count": votes.vote_count
                 }
     
-    # Fall back to persona order
-    # Get the current persona's position
-    current_persona_id = turn.model_config_id
-    current_order = db.query(PersonaOrder).filter(
-        PersonaOrder.conversation_id == conversation_id,
-        PersonaOrder.model_config_id == current_persona_id
-    ).first()
-    
-    if not current_order:
-        # If current persona is not in the order, use the first persona in the order
-        next_order = db.query(PersonaOrder).filter(
-            PersonaOrder.conversation_id == conversation_id
-        ).order_by(PersonaOrder.order_position).first()
-    else:
-        # Find the next persona in the order
-        next_position = (current_order.order_position + 1)
-        next_order = db.query(PersonaOrder).filter(
-            PersonaOrder.conversation_id == conversation_id,
-            PersonaOrder.order_position == next_position
-        ).first()
-        
-        # If we've reached the end of the order, loop back to the beginning
-        if not next_order:
-            next_order = db.query(PersonaOrder).filter(
-                PersonaOrder.conversation_id == conversation_id
-            ).order_by(PersonaOrder.order_position).first()
-    
-    if next_order:
-        next_persona = db.query(ModelConfig).filter(ModelConfig.id == next_order.model_config_id).first()
-        if next_persona:
-            return {
-                "next_persona_id": next_persona.id,
-                "next_persona_name": next_persona.name,
-                "selection_method": "order",
-                "order_position": next_order.order_position
-            }
-    
-    # If we get here, there's no valid next persona
+    # Fall back to persona order based on turn number rotation
+    persona_orders = db.query(PersonaOrder).filter(
+        PersonaOrder.conversation_id == conversation_id
+    ).order_by(PersonaOrder.order_position).all()
+
+    if not persona_orders:
+        raise HTTPException(
+            status_code=404,
+            detail="No valid next persona found. Please configure persona order for this conversation.",
+        )
+
+    next_index = turn.turn_number % len(persona_orders)
+    next_order = persona_orders[next_index]
+    next_persona = db.query(ModelConfig).filter(ModelConfig.id == next_order.model_config_id).first()
+    if next_persona:
+        return {
+            "next_persona_id": next_persona.id,
+            "next_persona_name": next_persona.name,
+            "selection_method": "order",
+            "order_position": next_order.order_position,
+        }
+
     raise HTTPException(
         status_code=404,
-        detail="No valid next persona found. Please configure persona order for this conversation."
+        detail="No valid next persona found. Please configure persona order for this conversation.",
     )
