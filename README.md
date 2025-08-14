@@ -106,6 +106,7 @@ roundtable/
 
 ### Documents
 
+- Accepted file types: plain text files (`.txt`, `.md`) and text-based PDFs (`.pdf`) up to 1 MB
 - `POST /api/conversations/{conversation_id}/documents`: Upload a document
 - `GET /api/conversations/{conversation_id}/documents`: List all documents in a conversation
 - `GET /api/documents/{document_id}`: Get a specific document
