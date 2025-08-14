@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
+import { getConversations, createConversation } from '../services/api';
 
 function ConversationList() {
   const [conversations, setConversations] = useState([]);
@@ -15,7 +15,7 @@ function ConversationList() {
   const fetchConversations = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/conversations`);
+      const response = await getConversations();
       setConversations(response.data);
       setError(null);
     } catch (err) {
@@ -31,8 +31,8 @@ function ConversationList() {
     if (!newConversationName.trim()) return;
 
     try {
-      const response = await axios.post(`${process.env.REACT_APP_API_URL}/conversations`, {
-        name: newConversationName
+      const response = await createConversation({
+        name: newConversationName,
       });
       setConversations([...conversations, response.data]);
       setNewConversationName('');
